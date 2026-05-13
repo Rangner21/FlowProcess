@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FlowProcess Studio</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="logo">FP</div>
+        <div>
+          <h1>FlowProcess</h1>
+          <span>Mapeador de Processos</span>
+        </div>
+      </div>
+
+      <button class="primary" id="addLaneBtn">+ Adicionar raia</button>
+      <div class="tool-title">Elementos</div>
+      <div class="palette">
+        <button data-type="start">● Início</button>
+        <button data-type="task">▣ Tarefa</button>
+        <button data-type="decision">◇ Decisão</button>
+        <button data-type="end">● Fim</button>
+        <button data-type="note">▤ Anotação</button>
+      </div>
+
+      <div class="tool-title">Ações</div>
+      <div class="actions">
+        <button id="connectBtn">Conectar</button>
+        <button id="duplicateBtn">Duplicar</button>
+        <button id="deleteBtn">Excluir</button>
+        <button id="saveBtn">Salvar</button>
+        <button id="loadBtn">Carregar</button>
+        <button id="exportPngBtn">Exportar PNG</button>
+        <button id="exportPdfBtn">Exportar PDF</button>
+        <button id="clearBtn" class="danger">Limpar</button>
+      </div>
+      <p class="hint">Dica: dê duplo clique em textos para editar. Clique em “Conectar” e selecione dois blocos.</p>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="menu" id="menuBtn">☰</button>
+        <input id="processTitle" value="Solicitação de Demanda" />
+        <div class="top-actions">
+          <button id="zoomOut">−</button>
+          <span id="zoomText">100%</span>
+          <button id="zoomIn">+</button>
+        </div>
+      </header>
+
+      <section class="workspace-wrap">
+        <div class="workspace" id="workspace">
+          <svg id="connections"></svg>
+          <div id="lanes"></div>
+          <div id="nodes"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
