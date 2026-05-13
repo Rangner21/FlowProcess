@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FlowProcess Studio</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- html2canvas CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <!-- jsPDF CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast" class="toast"></div>
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <span class="brand-icon">⬡</span>
+      <span class="brand-name">FlowProcess Studio</span>
+    </div>
+    <div class="topbar-center">
+      <input type="text" id="processTitle" class="process-title-input" placeholder="Nome do processo..." value="Processo sem título" />
+    </div>
+    <div class="topbar-actions">
+      <button class="btn btn-ghost" id="btnLoad" title="Carregar">
+        <span>📂</span> Carregar
+      </button>
+      <button class="btn btn-ghost" id="btnSave" title="Salvar">
+        <span>💾</span> Salvar
+      </button>
+      <button class="btn btn-ghost" id="btnExportPNG" title="Exportar PNG">
+        <span>🖼️</span> PNG
+      </button>
+      <button class="btn btn-ghost" id="btnExportPDF" title="Exportar PDF">
+        <span>📄</span> PDF
+      </button>
+      <button class="btn btn-danger-ghost" id="btnClear" title="Limpar tudo">
+        <span>🗑️</span> Limpar
+      </button>
+    </div>
+    <!-- Mobile menu toggle -->
+    <button class="mobile-menu-btn" id="mobileMenuBtn" title="Menu">☰</button>
+  </header>
+
+  <div class="app-body">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Raias</div>
+        <button class="tool-btn" id="btnAddLane">
+          <span class="tool-icon">＋</span>
+          <span class="tool-label">Adicionar Raia</span>
+        </button>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Elementos</div>
+        <button class="tool-btn" data-type="start">
+          <span class="tool-icon shape-start">●</span>
+          <span class="tool-label">Início</span>
+        </button>
+        <button class="tool-btn" data-type="task">
+          <span class="tool-icon shape-task">▬</span>
+          <span class="tool-label">Tarefa</span>
+        </button>
+        <button class="tool-btn" data-type="decision">
+          <span class="tool-icon shape-decision">◆</span>
+          <span class="tool-label">Decisão</span>
+        </button>
+        <button class="tool-btn" data-type="end">
+          <span class="tool-icon shape-end">●</span>
+          <span class="tool-label">Fim</span>
+        </button>
+        <button class="tool-btn" data-type="annotation">
+          <span class="tool-icon shape-annotation">📝</span>
+          <span class="tool-label">Anotação</span>
+        </button>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Ações</div>
+        <button class="tool-btn" id="btnConnect">
+          <span class="tool-icon">🔗</span>
+          <span class="tool-label">Modo Conectar</span>
+        </button>
+        <button class="tool-btn" id="btnDelete" title="Excluir selecionado">
+          <span class="tool-icon">✕</span>
+          <span class="tool-label">Excluir</span>
+        </button>
+      </div>
+
+      <div class="sidebar-section sidebar-help">
+        <div class="sidebar-section-title">Dicas</div>
+        <ul class="help-list">
+          <li>Duplo clique → editar texto</li>
+          <li>Duplo clique na raia → renomear</li>
+          <li>Delete → excluir selecionado</li>
+          <li>Conectar → clique origem → destino</li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- MAIN EDITOR AREA -->
+    <main class="editor-area" id="editorArea">
+      <div class="canvas-wrapper" id="canvasWrapper">
+        <!-- Lanes + blocks rendered here by JS -->
+        <div id="lanesContainer" class="lanes-container"></div>
+        <!-- SVG overlay for connectors -->
+        <svg id="connectorsLayer" class="connectors-svg"></svg>
+      </div>
+    </main>
+  </div>
+
+  <!-- INLINE EDIT INPUT (positioned absolutely) -->
+  <input type="text" id="inlineEdit" class="inline-edit" style="display:none;" />
+
+  <script src="app.js"></script>
+</body>
+</html>
