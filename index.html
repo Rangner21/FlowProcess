@@ -12,6 +12,10 @@
   <header class="topbar">
     <div class="brand"><span class="logo">◇</span><strong>FlowProcess Studio</strong></div>
     <input id="processTitle" value="Processo de Solicitação de Compras" />
+    <div class="historyBtns">
+      <button id="undoBtn" title="Desfazer (Ctrl+Z)">↶</button>
+      <button id="redoBtn" title="Refazer (Ctrl+Y)">↷</button>
+    </div>
     <button id="saveBtn" class="green">Salvar</button>
     <button id="loadBtn">Carregar</button>
     <button id="pngBtn">Exportar PNG</button>
@@ -24,6 +28,7 @@
       <section>
         <h3>FERRAMENTAS</h3>
         <button id="addLaneBtn" class="tool">▭ Adicionar Raia</button>
+        <button id="deleteLaneBtn" class="tool danger">🗑 Apagar Raia</button>
       </section>
       <section>
         <h3>ELEMENTOS</h3>
@@ -41,8 +46,10 @@
       </section>
       <section class="tips">
         <h3>ATALHOS</h3>
-        <p><b>Duplo clique</b> edita texto</p>
+        <p><b>Duplo clique</b> edita texto/nome da raia</p>
         <p><b>Delete</b> exclui selecionado</p>
+        <p><b>Ctrl + Z</b> desfaz</p>
+        <p><b>Ctrl + Y</b> refaz</p>
         <p><b>Arraste</b> para mover</p>
       </section>
     </aside>
@@ -55,6 +62,7 @@
         <button id="zoomOut" class="mini">−</button>
         <span id="zoomLabel">100%</span>
         <button id="zoomIn" class="mini">+</button>
+        <span class="hint">Clique no título da raia para selecionar. Duplo clique para renomear.</span>
       </div>
       <div id="canvasWrap">
         <div id="canvas">
