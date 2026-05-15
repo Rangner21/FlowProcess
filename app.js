@@ -107,7 +107,7 @@ function render() {
       selectedType = 'lane';
       selectedLane = i;
       selected = null;
-      render();
+      updateSelectionClasses();
     };
     title.ondblclick = (e) => {
       e.stopPropagation();
@@ -139,18 +139,37 @@ function render() {
   updateHistoryButtons();
 }
 
+
+function updateSelectionClasses() {
+  document.querySelectorAll('.node').forEach(el => {
+    el.classList.toggle('selected', selectedType === 'node' && el.dataset.id === selected);
+  });
+  document.querySelectorAll('.lane-title').forEach((el, idx) => {
+    el.classList.toggle('selected', selectedType === 'lane' && selectedLane === idx);
+  });
+  // Conectores precisam ser redesenhados para mostrar seleção visual da linha.
+  drawLines();
+  updateHistoryButtons();
+}
+
 function drawNode(n) {
   const el = document.createElement('div');
   el.className = 'node ' + n.type + (selected === n.id && selectedType === 'node' ? ' selected' : '');
   el.style.left = n.x + 'px';
   el.style.top = n.y + 'px';
   el.dataset.id = n.id;
+  el.title = 'Duplo clique para editar o texto';
   el.innerHTML = '<span class="text">' + escapeHtml(n.text).replace(/\n/g, '<br>') + '</span>';
   el.onmousedown = startDrag;
   el.onclick = (e) => {
     e.stopPropagation();
     if (mode === 'connect') connect(n.id);
-    else select('node', n.id);
+    else {
+      selectedType = 'node';
+      selected = n.id;
+      selectedLane = null;
+      updateSelectionClasses();
+    }
   };
   el.ondblclick = (e) => {
     e.stopPropagation();
@@ -290,7 +309,7 @@ function select(t, i) {
   selectedType = t;
   selected = i;
   selectedLane = null;
-  render();
+  updateSelectionClasses();
 }
 
 function connect(nid) {
