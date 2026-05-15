@@ -1,849 +1,376 @@
-/**
- * FlowProcess Studio — app.js
- * Editor visual de processos corporativos
- * Puro HTML/CSS/JS — sem frameworks ou bundlers
- */
+const canvas = document.getElementById('canvas');
+const lanesEl = document.getElementById('lanes');
+const connectorLayer = document.getElementById('connectorLayer');
+const statusText = document.getElementById('statusText');
+const toast = document.getElementById('toast');
+const processTitle = document.getElementById('processTitle');
 
-// ============================================================
-//  STATE
-// ============================================================
-const state = {
-  lanes: [],        // [{ id, name }]
-  blocks: [],       // [{ id, type, laneId, x, y, text }]
-  connectors: [],   // [{ id, fromId, toId }]
+const STORAGE_KEY = 'flowprocess_studio_project_v2';
 
-  selectedBlockId:    null,
-  selectedConnectorId: null,
-
-  connectMode:   false,
-  connectSource: null,  // blockId waiting for target
-
-  dragging:      null,  // { blockId, offsetX, offsetY, laneId }
+let state = {
+  lanes: [],
+  nodes: [],
+  connectors: []
 };
 
+let selected = null; // {type:'node'|'connector', id}
+let connectMode = false;
+let connectSource = null;
+let dragging = null;
 let idCounter = Date.now();
-const uid = () => 'id_' + (idCounter++);
 
-// ============================================================
-//  DOM REFS
-// ============================================================
-const lanesContainer = document.getElementById('lanesContainer');
-const svgLayer       = document.getElementById('connectorsLayer');
-const inlineEdit     = document.getElementById('inlineEdit');
-const toast          = document.getElementById('toast');
-const processTitle   = document.getElementById('processTitle');
-const btnConnect     = document.getElementById('btnConnect');
-const btnAddLane     = document.getElementById('btnAddLane');
-const btnDelete      = document.getElementById('btnDelete');
-const btnSave        = document.getElementById('btnSave');
-const btnLoad        = document.getElementById('btnLoad');
-const btnExportPNG   = document.getElementById('btnExportPNG');
-const btnExportPDF   = document.getElementById('btnExportPDF');
-const btnClear       = document.getElementById('btnClear');
-const mobileMenuBtn  = document.getElementById('mobileMenuBtn');
-const sidebar        = document.getElementById('sidebar');
-const canvasWrapper  = document.getElementById('canvasWrapper');
+function uid(prefix) { return `${prefix}_${++idCounter}`; }
 
-// ============================================================
-//  TOAST NOTIFICATION
-// ============================================================
-let toastTimer = null;
-function showToast(msg, type = 'success') {
-  toast.textContent = msg;
-  toast.className   = 'toast show ' + type;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toast.className = 'toast'; }, 2500);
+function showToast(message) {
+  toast.textContent = message;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 1800);
 }
+function setStatus(message) { statusText.textContent = message; }
 
-// ============================================================
-//  INITIALIZATION
-// ============================================================
 function init() {
-  setupSVGDefs();
-  setupEventListeners();
-  // Default lanes
-  addLane('Solicitante');
-  addLane('Área');
-  addLane('Executor');
+  setupSvgDefs();
+  bindEvents();
+  loadDefault();
   render();
 }
 
-// ============================================================
-//  SVG DEFS (arrowhead marker)
-// ============================================================
-function setupSVGDefs() {
-  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-  defs.innerHTML = `
-    <marker id="arrowhead" markerWidth="10" markerHeight="7"
-      refX="9" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#1e40af" />
-    </marker>
-    <marker id="arrowhead-selected" markerWidth="10" markerHeight="7"
-      refX="9" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626" />
-    </marker>
-  `;
-  svgLayer.appendChild(defs);
+function setupSvgDefs() {
+  connectorLayer.innerHTML = `
+    <defs>
+      <marker id="arrowHead" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L10,4 L0,8 Z" fill="#334155"></path>
+      </marker>
+    </defs>`;
 }
 
-// ============================================================
-//  EVENT LISTENERS
-// ============================================================
-function setupEventListeners() {
-  // Toolbar buttons
-  btnAddLane.addEventListener('click', () => { addLane(); render(); });
-  btnDelete.addEventListener('click', deleteSelected);
-  btnSave.addEventListener('click', saveToStorage);
-  btnLoad.addEventListener('click', loadFromStorage);
-  btnExportPNG.addEventListener('click', exportPNG);
-  btnExportPDF.addEventListener('click', exportPDF);
-  btnClear.addEventListener('click', clearAll);
-  btnConnect.addEventListener('click', toggleConnectMode);
-  mobileMenuBtn.addEventListener('click', () => sidebar.classList.toggle('open'));
-
-  // Tool buttons — add block
-  document.querySelectorAll('[data-type]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const type = btn.dataset.type;
-      addBlockToFirstLane(type);
-    });
+function bindEvents() {
+  document.getElementById('btnAddLane').addEventListener('click', () => addLane());
+  document.querySelectorAll('[data-add]').forEach(btn => {
+    btn.addEventListener('click', () => addNode(btn.dataset.add));
   });
+  document.getElementById('btnConnectMode').addEventListener('click', toggleConnectMode);
+  document.getElementById('btnDeleteSelected').addEventListener('click', deleteSelected);
+  document.getElementById('btnSave').addEventListener('click', saveProject);
+  document.getElementById('btnLoad').addEventListener('click', loadProject);
+  document.getElementById('btnExportPng').addEventListener('click', exportPNG);
+  document.getElementById('btnExportPdf').addEventListener('click', exportPDF);
+  document.getElementById('btnClear').addEventListener('click', clearProject);
+  document.getElementById('btnAddExample').addEventListener('click', addExample);
+  document.getElementById('btnFit').addEventListener('click', () => document.getElementById('canvasScroll').scrollTo({left:0, top:0, behavior:'smooth'}));
 
-  // Canvas background click → deselect
-  lanesContainer.addEventListener('mousedown', (e) => {
-    if (e.target === lanesContainer || e.target.classList.contains('lane-body')) {
-      deselectAll();
-    }
-  });
-
-  // Keyboard
   document.addEventListener('keydown', (e) => {
-    if (document.activeElement === inlineEdit) return;
-    if (document.activeElement === processTitle) return;
     if (e.key === 'Delete' || e.key === 'Backspace') {
-      if (document.activeElement.tagName === 'INPUT') return;
-      deleteSelected();
+      const active = document.activeElement?.tagName?.toLowerCase();
+      if (active !== 'input' && active !== 'textarea') deleteSelected();
     }
     if (e.key === 'Escape') {
-      if (state.connectMode) toggleConnectMode();
-      deselectAll();
-      if (inlineEdit.style.display !== 'none') cancelInlineEdit();
+      selected = null; connectSource = null; connectMode = false; updateConnectButton(); render();
     }
   });
 
-  // Mouse move & up for dragging
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', onMouseUp);
-
-  // Touch events for mobile drag
-  document.addEventListener('touchmove', onTouchMove, { passive: false });
-  document.addEventListener('touchend', onTouchEnd);
-}
-
-// ============================================================
-//  LANES
-// ============================================================
-function addLane(name) {
-  const id = uid();
-  const laneName = name || 'Nova Raia';
-  state.lanes.push({ id, name: laneName });
-  return id;
-}
-
-function deleteLane(laneId) {
-  // remove blocks in lane
-  const blockIds = state.blocks.filter(b => b.laneId === laneId).map(b => b.id);
-  blockIds.forEach(bid => {
-    state.connectors = state.connectors.filter(c => c.fromId !== bid && c.toId !== bid);
-    state.blocks = state.blocks.filter(b => b.id !== bid);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointerleave', onPointerUp);
+  canvas.addEventListener('click', (e) => {
+    if (e.target === canvas || e.target === lanesEl) {
+      selected = null; connectSource = null; render();
+    }
   });
-  state.lanes = state.lanes.filter(l => l.id !== laneId);
+}
+
+function loadDefault() {
+  state.lanes = [
+    { id: uid('lane'), title: 'Solicitante' },
+    { id: uid('lane'), title: 'Área' },
+    { id: uid('lane'), title: 'Executor' }
+  ];
+  state.nodes = [
+    { id: uid('node'), type: 'start', text: 'Início', x: 205, y: 55 },
+    { id: uid('node'), type: 'task', text: 'Solicita demanda', x: 355, y: 62 },
+    { id: uid('node'), type: 'decision', text: 'Aprovado?', x: 565, y: 225 },
+    { id: uid('node'), type: 'task', text: 'Executa atividade', x: 760, y: 432 },
+    { id: uid('node'), type: 'end', text: 'Fim', x: 990, y: 455 }
+  ];
+  state.connectors = [
+    { id: uid('conn'), from: state.nodes[0].id, to: state.nodes[1].id },
+    { id: uid('conn'), from: state.nodes[1].id, to: state.nodes[2].id },
+    { id: uid('conn'), from: state.nodes[2].id, to: state.nodes[3].id },
+    { id: uid('conn'), from: state.nodes[3].id, to: state.nodes[4].id }
+  ];
+}
+
+function addExample() {
+  if (!confirm('Adicionar exemplo vai substituir o processo atual. Continuar?')) return;
+  processTitle.value = 'Processo de Requisição de Compra';
+  state.lanes = [
+    { id: uid('lane'), title: 'Solicitante' },
+    { id: uid('lane'), title: 'Gestor' },
+    { id: uid('lane'), title: 'Compras' },
+    { id: uid('lane'), title: 'Financeiro' }
+  ];
+  state.nodes = [];
+  const n1 = createNode('start', 'Início', 210, 55);
+  const n2 = createNode('task', 'Abre requisição', 355, 62);
+  const n3 = createNode('decision', 'Gestor aprova?', 555, 220);
+  const n4 = createNode('task', 'Cotação com fornecedor', 740, 410);
+  const n5 = createNode('task', 'Valida orçamento', 955, 600);
+  const n6 = createNode('end', 'Fim', 1160, 615);
+  state.nodes.push(n1,n2,n3,n4,n5,n6);
+  state.connectors = [
+    { id: uid('conn'), from: n1.id, to: n2.id },
+    { id: uid('conn'), from: n2.id, to: n3.id },
+    { id: uid('conn'), from: n3.id, to: n4.id },
+    { id: uid('conn'), from: n4.id, to: n5.id },
+    { id: uid('conn'), from: n5.id, to: n6.id }
+  ];
   render();
+  showToast('Exemplo criado');
 }
 
-function startLaneRename(laneId) {
-  const lane = state.lanes.find(l => l.id === laneId);
-  if (!lane) return;
-  const laneEl = document.querySelector(`[data-lane-id="${laneId}"]`);
-  const titleEl = laneEl.querySelector('.lane-title');
-  const rect = titleEl.getBoundingClientRect();
+function createNode(type, text, x, y) { return { id: uid('node'), type, text, x, y }; }
 
-  inlineEdit.value = lane.name;
-  inlineEdit.style.display = 'block';
-  // Position near title
-  inlineEdit.style.left   = (rect.left + rect.width + 10) + 'px';
-  inlineEdit.style.top    = (rect.top + rect.height / 2 - 16) + 'px';
-  inlineEdit.style.width  = '160px';
-  inlineEdit.dataset.editType = 'lane';
-  inlineEdit.dataset.editId   = laneId;
-  inlineEdit.focus();
-  inlineEdit.select();
+function addLane() {
+  state.lanes.push({ id: uid('lane'), title: `Nova raia ${state.lanes.length + 1}` });
+  render(); showToast('Raia adicionada');
 }
 
-// ============================================================
-//  BLOCKS
-// ============================================================
-function addBlockToFirstLane(type) {
-  if (state.lanes.length === 0) {
-    addLane('Raia 1');
-  }
-  const laneId = state.lanes[0].id;
+function addNode(type) {
   const defaults = {
-    start:      { text: 'Início',     w: 70,  h: 70 },
-    task:       { text: 'Nova tarefa',w: 140, h: 70 },
-    decision:   { text: 'Aprovado?',  w: 90,  h: 90 },
-    end:        { text: 'Fim',        w: 70,  h: 70 },
-    annotation: { text: 'Observação', w: 140, h: 60 },
+    start: 'Início', task: 'Nova tarefa', decision: 'Aprovado?', end: 'Fim', note: 'Observação'
   };
-  const d = defaults[type] || defaults.task;
-  // Place block scattered to avoid overlap
-  const existingInLane = state.blocks.filter(b => b.laneId === laneId).length;
-  const x = 20 + (existingInLane % 5) * 170;
-  const y = 30 + Math.floor(existingInLane / 5) * 100;
-
-  const block = {
-    id: uid(), type, laneId,
-    x, y,
-    text: d.text,
-    w: d.w, h: d.h,
-  };
-  state.blocks.push(block);
-  render();
-  selectBlock(block.id);
+  const baseY = Math.max(45, (state.lanes.length ? 50 : 30));
+  const node = createNode(type, defaults[type], 210 + (state.nodes.length % 4) * 185, baseY + (Math.floor(state.nodes.length / 4) % Math.max(1,state.lanes.length)) * 185);
+  state.nodes.push(node);
+  selected = {type:'node', id: node.id};
+  render(); showToast('Bloco adicionado');
 }
 
-function deleteSelected() {
-  if (state.selectedBlockId) {
-    const bid = state.selectedBlockId;
-    state.connectors = state.connectors.filter(c => c.fromId !== bid && c.toId !== bid);
-    state.blocks = state.blocks.filter(b => b.id !== bid);
-    state.selectedBlockId = null;
-    render();
-  } else if (state.selectedConnectorId) {
-    state.connectors = state.connectors.filter(c => c.id !== state.selectedConnectorId);
-    state.selectedConnectorId = null;
-    render();
-  }
-}
-
-function selectBlock(id) {
-  state.selectedBlockId    = id;
-  state.selectedConnectorId = null;
-  updateSelectionVisuals();
-}
-
-function selectConnector(id) {
-  state.selectedConnectorId = id;
-  state.selectedBlockId    = null;
-  updateSelectionVisuals();
-}
-
-function deselectAll() {
-  state.selectedBlockId    = null;
-  state.selectedConnectorId = null;
-  state.connectSource      = null;
-  updateSelectionVisuals();
-}
-
-function updateSelectionVisuals() {
-  document.querySelectorAll('.block').forEach(el => {
-    el.classList.toggle('selected', el.dataset.blockId === state.selectedBlockId);
-    el.classList.toggle('connect-source', el.dataset.blockId === state.connectSource);
-  });
-  document.querySelectorAll('.connector-line').forEach(el => {
-    el.classList.toggle('selected', el.dataset.connId === state.selectedConnectorId);
-  });
-}
-
-// ============================================================
-//  CONNECT MODE
-// ============================================================
-function toggleConnectMode() {
-  state.connectMode  = !state.connectMode;
-  state.connectSource = null;
-  btnConnect.classList.toggle('active', state.connectMode);
-  document.body.classList.toggle('connect-mode', state.connectMode);
-  if (!state.connectMode) deselectAll();
-}
-
-function handleBlockClickInConnectMode(blockId) {
-  if (!state.connectSource) {
-    state.connectSource = blockId;
-    updateSelectionVisuals();
-    showToast('Clique no bloco de destino', 'info');
-  } else {
-    if (state.connectSource === blockId) {
-      state.connectSource = null;
-      updateSelectionVisuals();
-      return;
-    }
-    // Avoid duplicate connectors
-    const exists = state.connectors.find(
-      c => c.fromId === state.connectSource && c.toId === blockId
-    );
-    if (!exists) {
-      state.connectors.push({ id: uid(), fromId: state.connectSource, toId: blockId });
-      showToast('Conexão criada!', 'success');
-    } else {
-      showToast('Conexão já existe', 'info');
-    }
-    state.connectSource = null;
-    render();
-  }
-}
-
-// ============================================================
-//  DRAGGING
-// ============================================================
-function onBlockMouseDown(e, blockId) {
-  if (state.connectMode) return;
-  if (e.button !== 0) return;
-  e.preventDefault();
-  e.stopPropagation();
-
-  selectBlock(blockId);
-
-  const block  = state.blocks.find(b => b.id === blockId);
-  const laneEl = document.querySelector(`[data-lane-id="${block.laneId}"]`);
-  const laneBody = laneEl.querySelector('.lane-body');
-  const laneRect = laneBody.getBoundingClientRect();
-  const blockEl  = document.querySelector(`[data-block-id="${blockId}"]`);
-  const blockRect = blockEl.getBoundingClientRect();
-
-  state.dragging = {
-    blockId,
-    offsetX: e.clientX - blockRect.left,
-    offsetY: e.clientY - blockRect.top,
-    originLaneId: block.laneId,
-  };
-}
-
-function onMouseMove(e) {
-  if (!state.dragging) return;
-
-  const { blockId, offsetX, offsetY } = state.dragging;
-  const block = state.blocks.find(b => b.id === blockId);
-  if (!block) return;
-
-  // Determine which lane the cursor is over
-  const targetLane = getLaneAtPoint(e.clientX, e.clientY);
-
-  if (targetLane) {
-    const laneBody = document.querySelector(`[data-lane-id="${targetLane.id}"]`).querySelector('.lane-body');
-    const laneRect = laneBody.getBoundingClientRect();
-    let nx = e.clientX - laneRect.left - offsetX;
-    let ny = e.clientY - laneRect.top  - offsetY;
-    // Clamp to lane boundaries
-    nx = Math.max(0, Math.min(nx, laneRect.width  - block.w));
-    ny = Math.max(0, Math.min(ny, laneRect.height - block.h));
-    block.x = nx;
-    block.y = ny;
-    block.laneId = targetLane.id;
-  }
-
-  // Re-render connectors only for performance; redraw full on mouseup
-  renderConnectors();
-  // Update block position directly for smoothness
-  const blockEl = document.querySelector(`[data-block-id="${blockId}"]`);
-  if (blockEl) {
-    blockEl.style.left = block.x + 'px';
-    blockEl.style.top  = block.y + 'px';
-    if (block.laneId !== state.dragging.originLaneId) {
-      // Move to new lane body
-      const newLaneBody = document.querySelector(`[data-lane-id="${block.laneId}"]`)?.querySelector('.lane-body');
-      if (newLaneBody && blockEl.parentNode !== newLaneBody) {
-        newLaneBody.appendChild(blockEl);
-        state.dragging.originLaneId = block.laneId;
-      }
-    }
-  }
-}
-
-function onMouseUp() {
-  if (!state.dragging) return;
-  state.dragging = null;
-  render();
-}
-
-// Touch support
-function onTouchMove(e) {
-  if (!state.dragging) return;
-  e.preventDefault();
-  const touch = e.touches[0];
-  onMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
-}
-
-function onTouchEnd() {
-  onMouseUp();
-}
-
-function getLaneAtPoint(cx, cy) {
-  for (const lane of state.lanes) {
-    const laneEl = document.querySelector(`[data-lane-id="${lane.id}"]`);
-    if (!laneEl) continue;
-    const laneBody = laneEl.querySelector('.lane-body');
-    const rect = laneBody.getBoundingClientRect();
-    if (cx >= rect.left && cx <= rect.right && cy >= rect.top && cy <= rect.bottom) {
-      return lane;
-    }
-  }
-  return null;
-}
-
-// ============================================================
-//  INLINE TEXT EDIT
-// ============================================================
-function startBlockEdit(blockId) {
-  const block  = state.blocks.find(b => b.id === blockId);
-  if (!block) return;
-  const blockEl = document.querySelector(`[data-block-id="${blockId}"]`);
-  const rect    = blockEl.getBoundingClientRect();
-
-  inlineEdit.value = block.text;
-  inlineEdit.style.display = 'block';
-  inlineEdit.style.left    = rect.left + 'px';
-  inlineEdit.style.top     = rect.top  + 'px';
-  inlineEdit.style.width   = Math.max(block.w, 120) + 'px';
-  inlineEdit.dataset.editType = 'block';
-  inlineEdit.dataset.editId   = blockId;
-  inlineEdit.focus();
-  inlineEdit.select();
-}
-
-function commitInlineEdit() {
-  const type = inlineEdit.dataset.editType;
-  const id   = inlineEdit.dataset.editId;
-  const val  = inlineEdit.value.trim();
-
-  if (type === 'block') {
-    const block = state.blocks.find(b => b.id === id);
-    if (block && val) block.text = val;
-  } else if (type === 'lane') {
-    const lane = state.lanes.find(l => l.id === id);
-    if (lane && val) lane.name = val;
-  }
-  cancelInlineEdit();
-  render();
-}
-
-function cancelInlineEdit() {
-  inlineEdit.style.display    = 'none';
-  inlineEdit.dataset.editType = '';
-  inlineEdit.dataset.editId   = '';
-}
-
-inlineEdit.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter')  commitInlineEdit();
-  if (e.key === 'Escape') cancelInlineEdit();
-});
-inlineEdit.addEventListener('blur', commitInlineEdit);
-
-// ============================================================
-//  RENDER
-// ============================================================
 function render() {
   renderLanes();
+  renderNodes();
   renderConnectors();
-  updateSelectionVisuals();
-  syncSVGSize();
+  updateCanvasSize();
+  updateConnectButton();
 }
 
 function renderLanes() {
-  lanesContainer.innerHTML = '';
-
-  if (state.lanes.length === 0) {
-    lanesContainer.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">🗂️</div>
-        <div>Adicione raias e elementos pelo menu lateral</div>
-      </div>`;
-    return;
-  }
-
-  state.lanes.forEach((lane, idx) => {
+  lanesEl.innerHTML = '';
+  state.lanes.forEach((lane) => {
     const laneEl = document.createElement('div');
     laneEl.className = 'lane';
-    laneEl.dataset.laneId = lane.id;
-
-    // Lane header
-    laneEl.innerHTML = `
-      <div class="lane-header">
-        <div class="lane-title-wrap">
-          <span class="lane-title" title="Duplo clique para renomear">${escHtml(lane.name)}</span>
-          <button class="lane-edit-btn" title="Renomear raia">✏️</button>
-          <button class="lane-delete-btn" title="Excluir raia">✕</button>
-        </div>
-      </div>
-      <div class="lane-body"></div>
-    `;
-
-    // Lane rename — double click title
-    const titleEl = laneEl.querySelector('.lane-title');
-    titleEl.addEventListener('dblclick', () => startLaneRename(lane.id));
-
-    // Lane rename button
-    laneEl.querySelector('.lane-edit-btn').addEventListener('click', () => startLaneRename(lane.id));
-
-    // Lane delete button
-    laneEl.querySelector('.lane-delete-btn').addEventListener('click', () => {
-      if (confirm(`Excluir a raia "${lane.name}" e todos os blocos dentro dela?`)) {
-        deleteLane(lane.id);
-      }
-    });
-
-    // Render blocks into this lane's body
-    const laneBody = laneEl.querySelector('.lane-body');
-    const blocksInLane = state.blocks.filter(b => b.laneId === lane.id);
-    blocksInLane.forEach(block => {
-      laneBody.appendChild(createBlockElement(block));
-    });
-
-    lanesContainer.appendChild(laneEl);
+    laneEl.dataset.id = lane.id;
+    const label = document.createElement('div');
+    label.className = 'lane-label';
+    label.title = 'Duplo clique para editar o nome da raia';
+    label.innerHTML = `<span>${escapeHtml(lane.title)}</span>`;
+    label.addEventListener('dblclick', () => editLaneTitle(lane.id));
+    laneEl.appendChild(label);
+    lanesEl.appendChild(laneEl);
   });
 }
 
-function createBlockElement(block) {
-  const el = document.createElement('div');
-  el.className = `block block-${block.type}`;
-  el.dataset.blockId = block.id;
-  el.style.left = block.x + 'px';
-  el.style.top  = block.y + 'px';
-  if (block.w) el.style.width  = block.w + 'px';
-  if (block.h) el.style.height = block.h + 'px';
-
-  // Decision uses inner wrapper to counter-rotate text
-  if (block.type === 'decision') {
-    el.innerHTML = `<div class="block-inner">${escHtml(block.text)}</div>`;
-  } else {
-    el.textContent = block.text;
-  }
-
-  // Mouse events
-  el.addEventListener('mousedown', (e) => {
-    if (state.connectMode) return;
-    onBlockMouseDown(e, block.id);
+function renderNodes() {
+  document.querySelectorAll('.node').forEach(el => el.remove());
+  state.nodes.forEach(node => {
+    const el = document.createElement('div');
+    el.className = `node ${node.type}`;
+    if (selected?.type === 'node' && selected.id === node.id) el.classList.add('selected');
+    if (connectSource === node.id) el.classList.add('connect-source');
+    el.dataset.id = node.id;
+    el.style.left = node.x + 'px';
+    el.style.top = node.y + 'px';
+    el.innerHTML = `<span class="node-text">${escapeHtml(node.text)}</span>`;
+    el.addEventListener('pointerdown', (e) => onNodePointerDown(e, node.id));
+    el.addEventListener('dblclick', (e) => { e.stopPropagation(); editNodeText(node.id); });
+    el.addEventListener('click', (e) => onNodeClick(e, node.id));
+    canvas.appendChild(el);
   });
-
-  el.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (state.connectMode) {
-      handleBlockClickInConnectMode(block.id);
-      return;
-    }
-    selectBlock(block.id);
-  });
-
-  el.addEventListener('dblclick', (e) => {
-    e.stopPropagation();
-    if (!state.connectMode) startBlockEdit(block.id);
-  });
-
-  // Touch start for drag
-  el.addEventListener('touchstart', (e) => {
-    if (state.connectMode) return;
-    e.stopPropagation();
-    const touch = e.touches[0];
-    selectBlock(block.id);
-    const rect = el.getBoundingClientRect();
-    state.dragging = {
-      blockId: block.id,
-      offsetX: touch.clientX - rect.left,
-      offsetY: touch.clientY - rect.top,
-      originLaneId: block.laneId,
-    };
-  }, { passive: true });
-
-  // Connect-mode hover
-  el.addEventListener('mouseenter', () => {
-    if (state.connectMode && state.connectSource && state.connectSource !== block.id) {
-      el.classList.add('connect-hover');
-    }
-  });
-  el.addEventListener('mouseleave', () => el.classList.remove('connect-hover'));
-
-  return el;
 }
 
-// ============================================================
-//  CONNECTORS
-// ============================================================
 function renderConnectors() {
-  // Remove existing lines (keep defs)
-  svgLayer.querySelectorAll('.connector-line, .connector-label').forEach(el => el.remove());
-
+  setupSvgDefs();
   state.connectors.forEach(conn => {
-    const fromBlock = state.blocks.find(b => b.id === conn.fromId);
-    const toBlock   = state.blocks.find(b => b.id === conn.toId);
-    if (!fromBlock || !toBlock) return;
-
-    const from = getBlockCenter(fromBlock);
-    const to   = getBlockCenter(toBlock);
+    const from = state.nodes.find(n => n.id === conn.from);
+    const to = state.nodes.find(n => n.id === conn.to);
     if (!from || !to) return;
+    const p1 = centerOf(from);
+    const p2 = centerOf(to);
+    const pathData = makePath(p1, p2);
 
-    // Compute edge connection points
-    const { src, dst } = getEdgePoints(fromBlock, toBlock, from, to);
-
-    // Curved path
-    const dx = dst.x - src.x;
-    const dy = dst.y - src.y;
-    const cx1 = src.x + dx * 0.5;
-    const cy1 = src.y;
-    const cx2 = src.x + dx * 0.5;
-    const cy2 = dst.y;
-
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', `M${src.x},${src.y} C${cx1},${cy1} ${cx2},${cy2} ${dst.x},${dst.y}`);
-    path.classList.add('connector-line');
-    path.dataset.connId = conn.id;
-
-    const isSelected = conn.id === state.selectedConnectorId;
-    path.setAttribute('marker-end', isSelected ? 'url(#arrowhead-selected)' : 'url(#arrowhead)');
-    path.setAttribute('stroke', isSelected ? '#dc2626' : '#1e40af');
-
-    // Click on connector to select/delete
-    path.addEventListener('click', (e) => {
-      e.stopPropagation();
-      selectConnector(conn.id);
+    const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    hit.setAttribute('d', pathData);
+    hit.setAttribute('stroke', 'transparent');
+    hit.setAttribute('stroke-width', '18');
+    hit.setAttribute('fill', 'none');
+    hit.classList.add('connector-hit');
+    hit.style.pointerEvents = 'stroke';
+    hit.addEventListener('click', (e) => {
+      e.stopPropagation(); selected = {type:'connector', id: conn.id}; render();
     });
 
-    svgLayer.appendChild(path);
+    const visible = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    visible.setAttribute('d', pathData);
+    visible.classList.add('connector-visible');
+    if (selected?.type === 'connector' && selected.id === conn.id) visible.classList.add('selected');
+    visible.style.pointerEvents = 'none';
+
+    connectorLayer.appendChild(hit);
+    connectorLayer.appendChild(visible);
   });
 }
 
-function getBlockCenter(block) {
-  const laneEl = document.querySelector(`[data-lane-id="${block.laneId}"]`);
-  if (!laneEl) return null;
-  const laneBody = laneEl.querySelector('.lane-body');
-  const laneRect  = laneBody.getBoundingClientRect();
-  const wrapRect  = canvasWrapper.getBoundingClientRect();
-
-  const cx = (laneRect.left - wrapRect.left) + block.x + (block.w || 70) / 2;
-  const cy = (laneRect.top  - wrapRect.top)  + block.y + (block.h || 70) / 2;
-  return { x: cx, y: cy };
+function updateCanvasSize() {
+  const laneHeight = state.lanes.length * 185;
+  const maxX = Math.max(1180, ...state.nodes.map(n => n.x + nodeSize(n).w + 120));
+  const maxY = Math.max(760, laneHeight, ...state.nodes.map(n => n.y + nodeSize(n).h + 80));
+  canvas.style.width = maxX + 'px';
+  canvas.style.height = maxY + 'px';
+  connectorLayer.setAttribute('width', maxX);
+  connectorLayer.setAttribute('height', maxY);
+  lanesEl.style.minHeight = maxY + 'px';
 }
 
-function getEdgePoints(fromBlock, toBlock, from, to) {
-  const fw = fromBlock.w || 70, fh = fromBlock.h || 70;
-  const tw = toBlock.w  || 70, th = toBlock.h  || 70;
-
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-
-  // Determine exit/entry sides
-  let src, dst;
-
-  if (Math.abs(dx) > Math.abs(dy)) {
-    // Horizontal dominant
-    src = dx > 0
-      ? { x: from.x + fw / 2, y: from.y }
-      : { x: from.x - fw / 2, y: from.y };
-    dst = dx > 0
-      ? { x: to.x - tw / 2, y: to.y }
-      : { x: to.x + tw / 2, y: to.y };
-  } else {
-    // Vertical dominant
-    src = dy > 0
-      ? { x: from.x, y: from.y + fh / 2 }
-      : { x: from.x, y: from.y - fh / 2 };
-    dst = dy > 0
-      ? { x: to.x, y: to.y - th / 2 }
-      : { x: to.x, y: to.y + th / 2 };
-  }
-
-  return { src, dst };
+function centerOf(node) {
+  const size = nodeSize(node);
+  return { x: node.x + size.w / 2, y: node.y + size.h / 2 };
+}
+function nodeSize(node) {
+  if (node.type === 'start' || node.type === 'end') return {w:74, h:74};
+  if (node.type === 'decision') return {w:105, h:105};
+  if (node.type === 'note') return {w:160, h:70};
+  return {w:150, h:60};
+}
+function makePath(a, b) {
+  const dx = Math.max(80, Math.abs(b.x - a.x) * .45);
+  return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
 }
 
-function syncSVGSize() {
-  const rect = lanesContainer.getBoundingClientRect();
-  svgLayer.setAttribute('width',  lanesContainer.scrollWidth);
-  svgLayer.setAttribute('height', lanesContainer.scrollHeight);
-  svgLayer.style.width  = lanesContainer.scrollWidth  + 'px';
-  svgLayer.style.height = lanesContainer.scrollHeight + 'px';
-}
-
-// ============================================================
-//  SAVE / LOAD
-// ============================================================
-function saveToStorage() {
-  const data = {
-    title:      processTitle.value,
-    lanes:      state.lanes,
-    blocks:     state.blocks,
-    connectors: state.connectors,
-    version:    2,
-  };
-  try {
-    localStorage.setItem('flowprocess_save', JSON.stringify(data));
-    showToast('Processo salvo com sucesso!', 'success');
-  } catch(e) {
-    showToast('Erro ao salvar: ' + e.message, 'error');
-  }
-}
-
-function loadFromStorage() {
-  try {
-    const raw = localStorage.getItem('flowprocess_save');
-    if (!raw) { showToast('Nenhum processo salvo encontrado.', 'info'); return; }
-    const data = JSON.parse(raw);
-    if (!data.lanes || !data.blocks) throw new Error('Formato inválido');
-
-    processTitle.value  = data.title    || 'Processo sem título';
-    state.lanes         = data.lanes    || [];
-    state.blocks        = data.blocks   || [];
-    state.connectors    = data.connectors || [];
-    state.selectedBlockId    = null;
-    state.selectedConnectorId = null;
-    state.connectMode   = false;
-    state.connectSource = null;
-    state.dragging      = null;
-    btnConnect.classList.remove('active');
-    document.body.classList.remove('connect-mode');
-
-    render();
-    showToast('Processo carregado!', 'success');
-  } catch(e) {
-    showToast('Erro ao carregar: ' + e.message, 'error');
-  }
-}
-
-// ============================================================
-//  CLEAR
-// ============================================================
-function clearAll() {
-  if (!confirm('Limpar todo o processo? Esta ação não pode ser desfeita.')) return;
-  state.lanes      = [];
-  state.blocks     = [];
-  state.connectors = [];
-  state.selectedBlockId    = null;
-  state.selectedConnectorId = null;
-  state.connectMode   = false;
-  state.connectSource = null;
-  state.dragging      = null;
-  btnConnect.classList.remove('active');
-  document.body.classList.remove('connect-mode');
-
-  // Restore default lanes
-  addLane('Solicitante');
-  addLane('Área');
-  addLane('Executor');
-  processTitle.value = 'Processo sem título';
+function onNodePointerDown(e, id) {
+  if (connectMode) return;
+  e.preventDefault(); e.stopPropagation();
+  selected = {type:'node', id};
+  const node = state.nodes.find(n => n.id === id);
+  dragging = { id, startX: e.clientX, startY: e.clientY, nodeX: node.x, nodeY: node.y };
+  e.currentTarget.setPointerCapture?.(e.pointerId);
   render();
-  showToast('Editor limpo.', 'info');
 }
-
-// ============================================================
-//  EXPORT PNG
-// ============================================================
-function exportPNG() {
-  showToast('Gerando PNG...', 'info');
-
-  // Temporarily hide selection & inline edit
-  deselectAll();
-  cancelInlineEdit();
-
-  const target = canvasWrapper;
-
-  setTimeout(() => {
-    html2canvas(target, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#f1f5f9',
-      logging: false,
-    }).then(canvas => {
-      const link = document.createElement('a');
-      link.download = (processTitle.value || 'processo') + '.png';
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-      showToast('PNG exportado!', 'success');
-    }).catch(err => {
-      showToast('Erro ao exportar PNG', 'error');
-      console.error(err);
-    });
-  }, 100);
-}
-
-// ============================================================
-//  EXPORT PDF
-// ============================================================
-function exportPDF() {
-  showToast('Gerando PDF...', 'info');
-  deselectAll();
-  cancelInlineEdit();
-
-  const target = canvasWrapper;
-
-  setTimeout(() => {
-    html2canvas(target, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#f1f5f9',
-      logging: false,
-    }).then(canvas => {
-      const { jsPDF } = window.jspdf;
-      const imgData = canvas.toDataURL('image/png');
-      const imgW = canvas.width;
-      const imgH = canvas.height;
-
-      // Landscape A4 in mm: 297 x 210
-      const pageW = 297;
-      const pageH = 210;
-      const ratio = Math.min(pageW / (imgW / 2), pageH / (imgH / 2)); // /2 because scale=2
-
-      const drawW = (imgW / 2) * ratio;
-      const drawH = (imgH / 2) * ratio;
-      const offsetX = (pageW - drawW) / 2;
-      const offsetY = (pageH - drawH) / 2;
-
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-
-      // Header
-      pdf.setFontSize(10);
-      pdf.setTextColor(100);
-      pdf.text('FlowProcess Studio', 10, 8);
-      pdf.setFontSize(13);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text(processTitle.value || 'Processo', pageW / 2, 8, { align: 'center' });
-      pdf.setFontSize(8);
-      pdf.setTextColor(148, 163, 184);
-      pdf.text(new Date().toLocaleDateString('pt-BR'), pageW - 10, 8, { align: 'right' });
-
-      // Diagram
-      pdf.addImage(imgData, 'PNG', offsetX, offsetY + 5, drawW, drawH - 5);
-
-      pdf.save((processTitle.value || 'processo') + '.pdf');
-      showToast('PDF exportado!', 'success');
-    }).catch(err => {
-      showToast('Erro ao exportar PDF', 'error');
-      console.error(err);
-    });
-  }, 100);
-}
-
-// ============================================================
-//  UTILITY
-// ============================================================
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-// ============================================================
-//  RESIZE OBSERVER — keep SVG layer synced
-// ============================================================
-const resizeObserver = new ResizeObserver(() => {
-  syncSVGSize();
+function onPointerMove(e) {
+  if (!dragging) return;
+  const node = state.nodes.find(n => n.id === dragging.id);
+  if (!node) return;
+  node.x = Math.max(150, dragging.nodeX + e.clientX - dragging.startX);
+  node.y = Math.max(12, dragging.nodeY + e.clientY - dragging.startY);
+  updateCanvasSize();
   renderConnectors();
-});
-resizeObserver.observe(lanesContainer);
-window.addEventListener('resize', () => {
-  syncSVGSize();
-  renderConnectors();
-});
+}
+function onPointerUp() { dragging = null; }
 
-// ============================================================
-//  START
-// ============================================================
+function onNodeClick(e, id) {
+  e.stopPropagation();
+  if (!connectMode) { selected = {type:'node', id}; render(); return; }
+  if (!connectSource) {
+    connectSource = id; selected = {type:'node', id}; setStatus('Agora clique no bloco de destino'); render(); return;
+  }
+  if (connectSource === id) { showToast('Escolha outro bloco'); return; }
+  const exists = state.connectors.some(c => c.from === connectSource && c.to === id);
+  if (!exists) state.connectors.push({ id: uid('conn'), from: connectSource, to: id });
+  connectSource = null;
+  setStatus('Conexão criada. Escolha outra origem ou desative o modo conectar.');
+  render();
+}
+
+function toggleConnectMode() {
+  connectMode = !connectMode;
+  connectSource = null;
+  setStatus(connectMode ? 'Modo conectar ativo: clique na origem e depois no destino' : 'Pronto para editar');
+  updateConnectButton(); render();
+}
+function updateConnectButton() {
+  const btn = document.getElementById('btnConnectMode');
+  btn.classList.toggle('active', connectMode);
+}
+
+function editNodeText(id) {
+  const node = state.nodes.find(n => n.id === id);
+  if (!node) return;
+  const newText = prompt('Digite o texto do bloco:', node.text);
+  if (newText !== null) { node.text = newText.trim() || node.text; render(); }
+}
+function editLaneTitle(id) {
+  const lane = state.lanes.find(l => l.id === id);
+  if (!lane) return;
+  const newTitle = prompt('Digite o nome da raia:', lane.title);
+  if (newTitle !== null) { lane.title = newTitle.trim() || lane.title; render(); showToast('Raia renomeada'); }
+}
+function deleteSelected() {
+  if (!selected) { showToast('Nada selecionado'); return; }
+  if (selected.type === 'node') {
+    state.nodes = state.nodes.filter(n => n.id !== selected.id);
+    state.connectors = state.connectors.filter(c => c.from !== selected.id && c.to !== selected.id);
+  }
+  if (selected.type === 'connector') state.connectors = state.connectors.filter(c => c.id !== selected.id);
+  selected = null; render(); showToast('Excluído');
+}
+
+function saveProject() {
+  const payload = { title: processTitle.value, state, savedAt: new Date().toISOString() };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  showToast('Projeto salvo no navegador');
+}
+function loadProject() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) { showToast('Nenhum projeto salvo'); return; }
+  try {
+    const payload = JSON.parse(raw);
+    state = payload.state;
+    processTitle.value = payload.title || 'Processo sem título';
+    selected = null; connectSource = null; render(); showToast('Projeto carregado');
+  } catch (err) { showToast('Erro ao carregar'); }
+}
+function clearProject() {
+  if (!confirm('Limpar todo o processo atual?')) return;
+  processTitle.value = 'Novo Processo';
+  state = { lanes: [], nodes: [], connectors: [] };
+  state.lanes = [ {id:uid('lane'), title:'Solicitante'}, {id:uid('lane'), title:'Área'}, {id:uid('lane'), title:'Executor'} ];
+  selected = null; connectSource = null; render(); showToast('Processo limpo');
+}
+
+async function exportPNG() {
+  selected = null; connectSource = null; render();
+  await wait(120);
+  const canvasImg = await html2canvas(canvas, { backgroundColor: '#ffffff', scale: 2, useCORS: true });
+  const link = document.createElement('a');
+  link.download = sanitizeFileName(processTitle.value || 'processo') + '.png';
+  link.href = canvasImg.toDataURL('image/png');
+  link.click();
+  showToast('PNG exportado');
+}
+async function exportPDF() {
+  selected = null; connectSource = null; render();
+  await wait(120);
+  const canvasImg = await html2canvas(canvas, { backgroundColor: '#ffffff', scale: 2, useCORS: true });
+  const imgData = canvasImg.toDataURL('image/png');
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const imgW = pageW - 14;
+  const imgH = canvasImg.height * imgW / canvasImg.width;
+  let y = 7;
+  if (imgH <= pageH - 14) {
+    pdf.addImage(imgData, 'PNG', 7, y, imgW, imgH);
+  } else {
+    const fitH = pageH - 14;
+    const fitW = canvasImg.width * fitH / canvasImg.height;
+    pdf.addImage(imgData, 'PNG', 7, y, Math.min(pageW - 14, fitW), fitH);
+  }
+  pdf.save(sanitizeFileName(processTitle.value || 'processo') + '.pdf');
+  showToast('PDF exportado');
+}
+
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+function sanitizeFileName(name) { return name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'processo'; }
+function escapeHtml(str) { return String(str).replace(/[&<>'"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m])); }
+
 init();
