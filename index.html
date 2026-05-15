@@ -9,75 +9,63 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark">FP</div>
-        <div>
-          <h1>FlowProcess Studio</h1>
-          <span>Mapeador visual de processos</span>
-        </div>
-      </div>
+  <header class="topbar">
+    <div class="brand"><span class="logo">◇</span><strong>FlowProcess Studio</strong></div>
+    <input id="processTitle" value="Processo de Solicitação de Compras" />
+    <button id="saveBtn" class="green">Salvar</button>
+    <button id="loadBtn">Carregar</button>
+    <button id="pngBtn">Exportar PNG</button>
+    <button id="pdfBtn">Exportar PDF</button>
+    <button id="clearBtn" class="red">Limpar</button>
+  </header>
 
-      <div class="process-title-wrap">
-        <label for="processTitle">Título</label>
-        <input id="processTitle" type="text" value="Processo de Solicitação" />
-      </div>
-
-      <div class="top-actions">
-        <button id="btnSave" class="btn primary">Salvar</button>
-        <button id="btnLoad" class="btn">Carregar</button>
-        <button id="btnExportPng" class="btn">PNG</button>
-        <button id="btnExportPdf" class="btn">PDF</button>
-        <button id="btnClear" class="btn danger">Limpar</button>
-      </div>
-    </header>
-
-    <main class="main-layout">
-      <aside class="sidebar">
-        <div class="tool-section">
-          <h2>Ferramentas</h2>
-          <button id="btnAddLane" class="tool-btn">＋ Adicionar raia</button>
-          <button data-add="start" class="tool-btn">● Início</button>
-          <button data-add="task" class="tool-btn">▭ Tarefa</button>
-          <button data-add="decision" class="tool-btn">◇ Decisão</button>
-          <button data-add="end" class="tool-btn">● Fim</button>
-          <button data-add="note" class="tool-btn">☰ Anotação</button>
-        </div>
-
-        <div class="tool-section">
-          <h2>Edição</h2>
-          <button id="btnConnectMode" class="tool-btn connect">↗ Modo conectar</button>
-          <button id="btnDeleteSelected" class="tool-btn danger-soft">Excluir selecionado</button>
-        </div>
-
-        <div class="hint-card">
-          <strong>Dicas rápidas</strong>
-          <p>Duplo clique em blocos ou nomes das raias para editar.</p>
-          <p>Ative “Modo conectar”, clique no bloco de origem e depois no destino.</p>
-        </div>
-      </aside>
-
-      <section class="workspace-wrap">
-        <div class="workspace-toolbar">
-          <div class="status-pill" id="statusText">Pronto para editar</div>
-          <div class="mini-actions">
-            <button id="btnFit" class="small-btn">Centralizar</button>
-            <button id="btnAddExample" class="small-btn">Exemplo rápido</button>
-          </div>
-        </div>
-
-        <div class="canvas-scroll" id="canvasScroll">
-          <div class="canvas" id="canvas">
-            <svg class="connector-layer" id="connectorLayer"></svg>
-            <div id="lanes" class="lanes"></div>
-          </div>
-        </div>
+  <main class="app">
+    <aside class="sidebar">
+      <section>
+        <h3>FERRAMENTAS</h3>
+        <button id="addLaneBtn" class="tool">▭ Adicionar Raia</button>
       </section>
-    </main>
-  </div>
+      <section>
+        <h3>ELEMENTOS</h3>
+        <button class="tool add" data-type="start">● Início</button>
+        <button class="tool add" data-type="task">▢ Tarefa</button>
+        <button class="tool add" data-type="decision">◇ Decisão</button>
+        <button class="tool add" data-type="end">● Fim</button>
+        <button class="tool add" data-type="note">◰ Anotação</button>
+      </section>
+      <section>
+        <h3>AÇÕES</h3>
+        <button id="connectBtn" class="tool">🔗 Modo Conectar</button>
+        <button id="selectBtn" class="tool active">↖ Selecionar</button>
+        <button id="deleteBtn" class="tool">🗑 Excluir</button>
+      </section>
+      <section class="tips">
+        <h3>ATALHOS</h3>
+        <p><b>Duplo clique</b> edita texto</p>
+        <p><b>Delete</b> exclui selecionado</p>
+        <p><b>Arraste</b> para mover</p>
+      </section>
+    </aside>
 
-  <div id="toast" class="toast">Salvo</div>
+    <section class="workspace">
+      <div class="toolbar">
+        <button id="pointer" class="mini active">↖</button>
+        <button id="hand" class="mini">✋</button>
+        <span class="sep"></span>
+        <button id="zoomOut" class="mini">−</button>
+        <span id="zoomLabel">100%</span>
+        <button id="zoomIn" class="mini">+</button>
+      </div>
+      <div id="canvasWrap">
+        <div id="canvas">
+          <svg id="lines"></svg>
+          <div id="lanes"></div>
+        </div>
+      </div>
+      <div class="status"><span id="countEls">Elementos: 0</span><span id="countConns">Conexões: 0</span><span id="statusZoom">100%</span></div>
+    </section>
+  </main>
+  <div id="toast"></div>
   <script src="app.js"></script>
 </body>
 </html>
